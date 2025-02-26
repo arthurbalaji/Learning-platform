@@ -30,7 +30,7 @@ public class User {
     @ManyToMany
     private List<Course> recommendedCourses;
 
-    @OneToMany(mappedBy = "user")
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     @JsonManagedReference(value = "user-quizSummary")
     private List<QuizSummary> quizSummaries;
 

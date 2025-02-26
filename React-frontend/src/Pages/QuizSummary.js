@@ -129,6 +129,7 @@ const QuizSummary = () => {
                 navigate(`/courses/${courseId}`);
             } else if (quizType === 'introductory') {
                 // Navigate to first lesson
+                
                 if (!summary.quiz.course?.lessons?.length) {
                     navigate(`/courses/${courseId}`);
                     return;
@@ -139,6 +140,7 @@ const QuizSummary = () => {
             } else {
                 // For lesson quizzes
                 if (score >= 80) {
+                   
                     const nextLessonId = getNextLessonId();
                     if (nextLessonId) {
                         // Navigate to the next lesson using the learn page

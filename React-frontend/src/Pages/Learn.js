@@ -111,7 +111,16 @@ const Learn = () => {
             );
 
             if (quizStatusResponse.data && quizStatusResponse.data.completed) {
-                // Quiz already completed
+                // Mark course as in progress if this is the first completed lesson
+                if (completedLessons.length === 0) {
+                    try {
+                        await axios.post(`http://localhost:8080/users/${user.id}/courses/${courseId}/in-progress`);
+                    } catch (error) {
+                        console.error('Error marking course as in progress:', error);
+                    }
+                }
+
+                // Navigate to next lesson or quiz
                 const currentLessonIndex = course.lessons.findIndex(l => l.id === parseInt(lessonId));
                 const nextLesson = course.lessons[currentLessonIndex + 1];
                 

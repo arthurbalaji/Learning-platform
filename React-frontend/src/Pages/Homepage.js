@@ -17,6 +17,117 @@ const Homepage = () => {
     const [error, setError] = useState(null);
     const navigate = useNavigate();
 
+    const sliderSettings = {
+        dots: true,
+        infinite: false,
+        speed: 500,
+        slidesToShow: 3,
+        slidesToScroll: 1,
+        responsive: [
+            {
+                breakpoint: 1024,
+                settings: {
+                    slidesToShow: 2,
+                    slidesToScroll: 1
+                }
+            },
+            {
+                breakpoint: 600,
+                settings: {
+                    slidesToShow: 1,
+                    slidesToScroll: 1
+                }
+            }
+        ]
+    };
+
+    const CourseCard = ({ course }) => (
+        <Box
+            onClick={() => handleCourseClick(course.id)}
+            sx={{
+                mx: 1,
+                cursor: 'pointer',
+                '&:hover': {
+                    transform: 'translateY(-5px)',
+                    transition: 'transform 0.3s ease'
+                }
+            }}
+        >
+            <Box
+                sx={{
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    boxShadow: 3,
+                    bgcolor: 'background.paper',
+                    height: '100%'
+                }}
+            >
+                <img
+                    src={course.imageUrl || 'default-course-image.jpg'}
+                    alt={course.name}
+                    style={{
+                        width: '100%',
+                        height: '160px',
+                        objectFit: 'cover'
+                    }}
+                />
+                <Box p={2}>
+                    <Typography 
+                        variant="h6" 
+                        noWrap 
+                        sx={{ 
+                            mb: 1,
+                            fontWeight: 'bold'
+                        }}
+                    >
+                        {course.name}
+                    </Typography>
+                    <Typography 
+                        variant="body2" 
+                        color="text.secondary"
+                        sx={{
+                            height: '3em',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical'
+                        }}
+                    >
+                        {course.description}
+                    </Typography>
+                </Box>
+            </Box>
+        </Box>
+    );
+
+    const renderCourseSection = (title, courses) => (
+        <Box mt={4}>
+            <Typography 
+                variant="h5" 
+                component="h2" 
+                sx={{ 
+                    mb: 3,
+                    fontWeight: 'bold',
+                    color: 'primary.main'
+                }}
+            >
+                {title}
+            </Typography>
+            {courses.length > 0 ? (
+                <Slider {...sliderSettings}>
+                    {courses.map(course => (
+                        <CourseCard key={course.id} course={course} />
+                    ))}
+                </Slider>
+            ) : (
+                <Typography variant="body1" color="text.secondary">
+                    No courses available
+                </Typography>
+            )}
+        </Box>
+    );
+
     useEffect(() => {
         const fetchCourses = async () => {
             if (!user) return;
@@ -25,7 +136,7 @@ const Homepage = () => {
             setError(null);
             
             try {
-                // Try fetching each type of course separately to identify which request fails
+                // Fetch in-progress courses
                 try {
                     const inProgressResponse = await axios.get(`http://localhost:8080/users/${user.id}/in-progress-courses`);
                     setInProgressCourses(inProgressResponse.data || []);
@@ -34,14 +145,24 @@ const Homepage = () => {
                     setInProgressCourses([]);
                 }
 
+                // Fetch recommended courses from Python API
                 try {
-                    const recommendedResponse = await axios.get(`http://localhost:8080/users/${user.id}/recommended-courses`);
+                    const recommendedResponse = await axios.get(`http://localhost:5000/users/${user.id}/recommended-courses`);
                     setRecommendedCourses(recommendedResponse.data || []);
                 } catch (error) {
                     console.error('Error fetching recommended courses:', error.response?.data || error.message);
                     setRecommendedCourses([]);
+                    
+                    // Fallback to Spring Boot API if Python API fails
+                    try {
+                        const fallbackResponse = await axios.get(`http://localhost:8080/users/${user.id}/recommended-courses`);
+                        setRecommendedCourses(fallbackResponse.data || []);
+                    } catch (fallbackError) {
+                        console.error('Fallback recommendation failed:', fallbackError);
+                    }
                 }
 
+                // Fetch all courses
                 try {
                     const allCoursesResponse = await axios.get('http://localhost:8080/courses');
                     setAllCourses(allCoursesResponse.data || []);
@@ -69,30 +190,6 @@ const Homepage = () => {
         navigate(`/courses/${courseId}`);
     };
 
-    const renderCourses = (courses) => {
-        if (courses.length === 0) {
-            return (
-                <Typography variant="body1" color="textSecondary">
-                    No courses available
-                </Typography>
-            );
-        }
-
-        return (
-            <Slider dots={true} infinite={false} speed={500} 
-                    slidesToShow={Math.min(3, courses.length)} 
-                    slidesToScroll={1}>
-                {courses.map((course) => (
-                    <Box key={course.id} p={2} 
-                         onClick={() => handleCourseClick(course.id)} 
-                         style={{ cursor: 'pointer' }}>
-                        <CourseList courses={[course]} />
-                    </Box>
-                ))}
-            </Slider>
-        );
-    };
-
     if (loading) {
         return (
             <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
@@ -110,27 +207,22 @@ const Homepage = () => {
     }
 
     return (
-        <Container>
-            <Box mt={4}>
-                <Typography variant="h4" component="h1">
-                    Welcome, {user?.name || 'Guest'}!
-                </Typography>
-                
-                <Typography variant="h6" component="h2" mt={4}>
-                    Your In-Progress Courses
-                </Typography>
-                {renderCourses(inProgressCourses)}
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+            <Typography 
+                variant="h4" 
+                component="h1" 
+                sx={{ 
+                    mb: 4,
+                    fontWeight: 'bold',
+                    color: 'primary.main'
+                }}
+            >
+                Welcome, {user?.name || 'Guest'}!
+            </Typography>
 
-                <Typography variant="h6" component="h2" mt={4}>
-                    Recommended Courses
-                </Typography>
-                {renderCourses(recommendedCourses)}
-
-                <Typography variant="h6" component="h2" mt={4}>
-                    All Courses
-                </Typography>
-                {renderCourses(allCourses)}
-            </Box>
+            {renderCourseSection('Continue Learning', inProgressCourses)}
+            {renderCourseSection('Recommended for You', recommendedCourses)}
+            {renderCourseSection('All Courses', allCourses)}
         </Container>
     );
 };

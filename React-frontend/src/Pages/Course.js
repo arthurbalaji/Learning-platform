@@ -8,6 +8,7 @@ const Course = () => {
     const { courseId } = useParams();
     const [course, setCourse] = useState(null);
     const [enrolled, setEnrolled] = useState(false);
+    const [inprogress, setInprogress] = useState(false);
     const [completed, setCompleted] = useState(false);
     const [completionPercentage, setCompletionPercentage] = useState(0);
     const [quizCompleted, setQuizCompleted] = useState(false);
@@ -21,8 +22,9 @@ const Course = () => {
                 setCourse(response.data);
                 
                 if (user) {
-                    const [enrolledResponse, completedResponse] = await Promise.all([
+                    const [enrolledResponse, inprogressResponse, completedResponse] = await Promise.all([
                         axios.get(`http://localhost:8080/users/${user.id}/enrolled-courses`),
+                        axios.get(`http://localhost:8080/users/${user.id}/in-progress-courses`),
                         axios.get(`http://localhost:8080/users/${user.id}/completed-courses`)
                     ]);
 
@@ -30,11 +32,15 @@ const Course = () => {
                     const isEnrolled = enrolledCourses.some(c => c.id === parseInt(courseId));
                     setEnrolled(isEnrolled);
 
+                    const inprogressCourses = inprogressResponse.data;
+                    const isInprogress = inprogressCourses.some(c => c.id === parseInt(courseId));
+                    setInprogress(isInprogress);
+
                     const completedCourses = completedResponse.data;
                     const isCompleted = completedCourses.some(c => c.id === parseInt(courseId));
                     setCompleted(isCompleted);
 
-                    if (isEnrolled) {
+                    if (isEnrolled || isInprogress) {
                         const quizStatusResponse = await axios.get(
                             `http://localhost:8080/users/${user.id}/courses/${courseId}/quiz-status`
                         );
@@ -131,7 +137,7 @@ const Course = () => {
                         <Button variant="contained" color="primary" onClick={handleDownloadCertificate}>
                             Download Certificate
                         </Button>
-                    ) : enrolled ? (
+                    ) : enrolled || inprogress ? (
                         <Box>
                             <Typography variant="h6">Course Progress</Typography>
                             <Box display="flex" alignItems="center" mt={1}>

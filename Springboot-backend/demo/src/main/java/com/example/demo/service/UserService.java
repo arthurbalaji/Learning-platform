@@ -15,6 +15,8 @@ import com.example.demo.repository.QuizRepository;
 import com.example.demo.repository.QuizSummaryRepository;
 
 import com.example.demo.repository.UserRepository;
+import com.example.demo.repository.LessonRepository;
+
 
 import jakarta.transaction.Transactional;
 
@@ -23,6 +25,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,6 +52,9 @@ public class UserService {
     @Autowired
     private QuizSummaryRepository quizSummaryRepository;
 
+    @Autowired
+    private LessonRepository lessonRepository;
+
     
 
     public User registerUser(User user) {
@@ -71,7 +77,7 @@ public class UserService {
         Progress progress = new Progress();
         progress.setUser(user);
         progress.setCourse(course);
-        progress.setCompletedLessons(List.of());
+        progress.setCompletedLessons(new HashSet<>()); // Changed from List.of()
         progressRepository.save(progress);
 
         return userRepository.save(user);
@@ -208,9 +214,19 @@ public class UserService {
 
     @Transactional
     public QuizSummary addLessonQuizSummary(Long userId, Long courseId, Long lessonId, List<QuestionSummary> questionSummaries) {
+        Progress progress = getOrCreateProgress(userId, courseId);
+        Lesson lesson = lessonRepository.findById(lessonId)
+                .orElseThrow();
+        
+        // Add the completed lesson to the Set
+        progress.addCompletedLesson(lesson);
+        
+        // Save the progress
+        progressRepository.save(progress);
+        
         User user = userRepository.findById(userId).orElseThrow();
         Course course = courseRepository.findById(courseId).orElseThrow();
-        Lesson lesson = course.getLessons().stream()
+        lesson = course.getLessons().stream()
                 .filter(l -> l.getId().equals(lessonId))
                 .findFirst()
                 .orElseThrow();
@@ -226,15 +242,12 @@ public class UserService {
         
         // If score is >= 80%, mark the lesson as completed
         if (score >= 80) {
-            Progress progress = progressRepository.findByUserIdAndCourseId(userId, courseId)
+            progress = progressRepository.findByUserIdAndCourseId(userId, courseId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Progress not found"));
             
-            List<Lesson> completedLessons = progress.getCompletedLessons();
-            if (!completedLessons.contains(lesson)) {
-                completedLessons.add(lesson);
-                progress.setCompletedLessons(completedLessons);
-                progressRepository.save(progress);
-            }
+            // Update to use Set methods instead of List
+            progress.addCompletedLesson(lesson);
+            progressRepository.save(progress);
         }
         
         return quizSummaryRepository.save(quizSummary);
@@ -248,7 +261,20 @@ public class UserService {
         return (int) ((double) correctAnswers / totalQuestions * 100);
     }
 
-    
+    private Progress getOrCreateProgress(Long userId, Long courseId) {
+        return progressRepository.findByUserIdAndCourseId(userId, courseId)
+                .orElseGet(() -> {
+                    Progress newProgress = new Progress();
+                    User user = userRepository.findById(userId)
+                            .orElseThrow();
+                    Course course = courseRepository.findById(courseId)
+                            .orElseThrow();
+                    newProgress.setUser(user);
+                    newProgress.setCourse(course);
+                    newProgress.setCompletedLessons(new HashSet<>());
+                    return progressRepository.save(newProgress);
+                });
+    }
 
     
 
@@ -315,4 +341,17 @@ public class UserService {
         // Find all quiz summaries for this user and the course's final quiz
         return quizSummaryRepository.findByUserAndQuiz(user, course.getFinalQuiz());
     }
+
+    @Transactional
+    public Progress markCourseAsInProgress(Long userId, Long courseId) {
+        Progress progress = progressRepository.findByUserIdAndCourseId(userId, courseId)
+                .orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, 
+                    "Progress not found for user " + userId + " and course " + courseId
+                ));
+        
+        progress.markAsInProgress(); // Use the method from Progress entity
+        return progressRepository.save(progress);
+    }
+    
 }

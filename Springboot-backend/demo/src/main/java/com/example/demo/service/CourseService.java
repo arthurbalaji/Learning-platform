@@ -10,10 +10,14 @@ import com.example.demo.repository.ProgressRepository;
 import com.example.demo.repository.QuizRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import org.hibernate.Hibernate;
 
-
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class CourseService {
@@ -50,11 +54,32 @@ public class CourseService {
     }
 
     public List<Course> getAllCourses() {
-        return courseRepository.findAll();
+        List<Course> courses = courseRepository.findAll();
+        // Initialize lazy collections
+        courses.forEach(course -> {
+            Hibernate.initialize(course.getLessons());
+            if (course.getIntroductoryQuiz() != null) {
+                Hibernate.initialize(course.getIntroductoryQuiz());
+            }
+            if (course.getFinalQuiz() != null) {
+                Hibernate.initialize(course.getFinalQuiz());
+            }
+        });
+        return courses;
     }
 
     public Optional<Course> getCourseDetails(Long courseId) {
-        return courseRepository.findById(courseId);
+        Optional<Course> courseOpt = courseRepository.findById(courseId);
+        courseOpt.ifPresent(course -> {
+            Hibernate.initialize(course.getLessons());
+            if (course.getIntroductoryQuiz() != null) {
+                Hibernate.initialize(course.getIntroductoryQuiz());
+            }
+            if (course.getFinalQuiz() != null) {
+                Hibernate.initialize(course.getFinalQuiz());
+            }
+        });
+        return courseOpt;
     }
 
     public Course addIntroductoryQuiz(Long courseId, Quiz quiz) {
@@ -129,61 +154,93 @@ public class CourseService {
 
     public double getCourseCompletionPercentage(Long userId, Long courseId) {
         Progress progress = progressRepository.findByUserIdAndCourseId(userId, courseId).orElseThrow();
+        
         int totalLessons = progress.getCourse().getLessons().size();
+        if (totalLessons == 0) return 0.0;
+        
         int completedLessons = progress.getCompletedLessons().size();
         return (double) completedLessons / totalLessons * 100;
     }
 
     public List<Lesson> getCompletedLessons(Long userId, Long courseId) {
         Progress progress = progressRepository.findByUserIdAndCourseId(userId, courseId)
-                .orElseThrow(() -> new RuntimeException("Progress not found"));
-        return progress.getCompletedLessons();
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Progress not found"));
+        Set<Lesson> completedLessons = progress.getCompletedLessons();
+        // Initialize lazy-loaded lessons
+        completedLessons.forEach(Hibernate::initialize);
+        return new ArrayList<>(completedLessons);
     }
 
     @jakarta.transaction.Transactional
     public Course updateCourse(Long courseId, Course updatedCourse) {
         Course existingCourse = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found"));
+                .orElseThrow();
 
-        // Update basic course information
-        existingCourse.setName(updatedCourse.getName());
-        existingCourse.setDescription(updatedCourse.getDescription());
-        existingCourse.setImageUrl(updatedCourse.getImageUrl());
+        // Update basic course information safely
+        if (updatedCourse.getName() != null) {
+            existingCourse.setName(updatedCourse.getName());
+        }
+        if (updatedCourse.getDescription() != null) {
+            existingCourse.setDescription(updatedCourse.getDescription());
+        }
+        if (updatedCourse.getImageUrl() != null) {
+            existingCourse.setImageUrl(updatedCourse.getImageUrl());
+        }
 
-        // Update or set introductory quiz
+        // Handle introductory quiz update
+        updateIntroductoryQuiz(existingCourse, updatedCourse);
+
+        // Handle final quiz update
+        updateFinalQuiz(existingCourse, updatedCourse);
+
+        // Handle lessons update
+        updateLessons(existingCourse, updatedCourse);
+
+        return courseRepository.save(existingCourse);
+    }
+
+    private void updateIntroductoryQuiz(Course existingCourse, Course updatedCourse) {
         if (updatedCourse.getIntroductoryQuiz() != null) {
+            Quiz quiz = updatedCourse.getIntroductoryQuiz();
             if (existingCourse.getIntroductoryQuiz() != null) {
-                updatedCourse.getIntroductoryQuiz().setId(existingCourse.getIntroductoryQuiz().getId());
+                quiz.setId(existingCourse.getIntroductoryQuiz().getId());
             }
-            quizRepository.save(updatedCourse.getIntroductoryQuiz());
-            existingCourse.setIntroductoryQuiz(updatedCourse.getIntroductoryQuiz());
+            quiz = quizRepository.save(quiz);
+            existingCourse.setIntroductoryQuiz(quiz);
         }
+    }
 
-        // Update or set final quiz
+    private void updateFinalQuiz(Course existingCourse, Course updatedCourse) {
         if (updatedCourse.getFinalQuiz() != null) {
+            Quiz quiz = updatedCourse.getFinalQuiz();
             if (existingCourse.getFinalQuiz() != null) {
-                updatedCourse.getFinalQuiz().setId(existingCourse.getFinalQuiz().getId());
+                quiz.setId(existingCourse.getFinalQuiz().getId());
             }
-            quizRepository.save(updatedCourse.getFinalQuiz());
-            existingCourse.setFinalQuiz(updatedCourse.getFinalQuiz());
+            quiz = quizRepository.save(quiz);
+            existingCourse.setFinalQuiz(quiz);
         }
+    }
 
-        // Update lessons
-        if (updatedCourse.getLessons() != null) {
-            // Clear existing lessons
+    private void updateLessons(Course existingCourse, Course updatedCourse) {
+        if (updatedCourse.getLessons() != null && !updatedCourse.getLessons().isEmpty()) {
+            List<Lesson> currentLessons = new ArrayList<>(existingCourse.getLessons());
             existingCourse.getLessons().clear();
-            
-            // Add updated lessons
+
             updatedCourse.getLessons().forEach(lesson -> {
                 if (lesson.getQuiz() != null) {
                     quizRepository.save(lesson.getQuiz());
                 }
-                lessonRepository.save(lesson);
+                Lesson savedLesson = lessonRepository.save(lesson);
+                existingCourse.getLessons().add(savedLesson);
             });
-            existingCourse.setLessons(updatedCourse.getLessons());
-        }
 
-        return courseRepository.save(existingCourse);
+            // Clean up any orphaned lessons
+            currentLessons.forEach(lesson -> {
+                if (!existingCourse.getLessons().contains(lesson)) {
+                    lessonRepository.delete(lesson);
+                }
+            });
+        }
     }
 
     @jakarta.transaction.Transactional

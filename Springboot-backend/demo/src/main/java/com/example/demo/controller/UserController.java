@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.entity.Course;
+import com.example.demo.entity.Progress;
 import com.example.demo.entity.QuizSummary;
 import com.example.demo.entity.User;
 import com.example.demo.entity.QuizSummary.QuestionSummary;
@@ -69,14 +70,13 @@ public class UserController {
     }
 
     @GetMapping("/{userId}/in-progress-courses")
-    public ResponseEntity<List<Course>> getInProgressCourses(@PathVariable Long userId) {
+    public List<Course> getInProgressCourses(@PathVariable Long userId) {
         try {
             List<Course> courses = userService.getInProgressCourses(userId);
-            return ResponseEntity.ok(courses);
+            return courses;
         } catch (Exception e) {
             
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                               .body(null);
+            return null;
         }
     }
 
@@ -185,5 +185,21 @@ public class UserController {
             @PathVariable Long quizSummaryId) {
         QuizSummary summary = userService.getLessonQuizSummary(userId, courseId, lessonId, quizSummaryId);
         return new ResponseEntity<>(summary, HttpStatus.OK);
+    }
+
+    @PostMapping("/users/{userId}/courses/{courseId}/in-progress")
+    public ResponseEntity<Progress> markCourseAsInProgress(
+        @PathVariable Long userId,
+        @PathVariable Long courseId
+    ) {
+        try {
+            Progress progress = userService.markCourseAsInProgress(userId, courseId);
+            return ResponseEntity.ok(progress);
+        } catch (Exception e) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR, 
+                "Error marking course as in progress: " + e.getMessage()
+            );
+        }
     }
 }

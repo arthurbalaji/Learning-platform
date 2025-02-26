@@ -5,28 +5,52 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Getter
 @Setter
+@Table(name = "progress", uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"user_id", "course_id"})
+})
 public class Progress {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     @JsonBackReference(value = "user-progress")
     private User user;
 
-    @ManyToOne
-    @JoinColumn(name = "course_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id", nullable = false)
     @JsonBackReference(value = "course-progress")
     private Course course;
 
-    @OneToMany
-    private List<Lesson> completedLessons;
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "progress_completed_lessons",
+        joinColumns = @JoinColumn(name = "progress_id"),
+        inverseJoinColumns = @JoinColumn(name = "lesson_id"),
+        uniqueConstraints = @UniqueConstraint(columnNames = {"progress_id", "lesson_id"})
+    )
+    private Set<Lesson> completedLessons = new HashSet<>();
+
+    // Add helper methods for managing completedLessons
+    public void addCompletedLesson(Lesson lesson) {
+        if (completedLessons == null) {
+            completedLessons = new HashSet<>();
+        }
+        completedLessons.add(lesson);
+    }
+
+    public void removeCompletedLesson(Lesson lesson) {
+        if (completedLessons != null) {
+            completedLessons.remove(lesson);
+        }
+    }
 
     @Enumerated(EnumType.STRING)
     private Status status;
@@ -46,13 +70,18 @@ public class Progress {
 
     @PreUpdate
     private void updateStatus() {
-        // Only update status if it's not already COMPLETED
-        if (status != Status.COMPLETED) {
-            if (completedLessons == null || completedLessons.isEmpty()) {
+        // Only update status if it's not already COMPLETED or IN_PROGRESS
+        if (status != Status.COMPLETED && status != Status.IN_PROGRESS) {
+            
                 status = Status.ENROLLED;
-            } else {
-                status = Status.IN_PROGRESS;
-            }
+            
+        }
+    }
+
+    // Method to explicitly set status to IN_PROGRESS
+    public void markAsInProgress() {
+        if (status != Status.COMPLETED) {
+            this.status = Status.IN_PROGRESS;
         }
     }
 

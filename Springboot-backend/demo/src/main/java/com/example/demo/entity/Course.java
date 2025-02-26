@@ -28,7 +28,7 @@ public class Course {
     @OneToOne(cascade = CascadeType.ALL)
     private Quiz finalQuiz;
 
-    @OneToMany(mappedBy = "course")
+    @OneToMany(mappedBy = "course", cascade = CascadeType.REMOVE)
     @JsonManagedReference(value = "course-progress")
     private List<Progress> progressList;
 }

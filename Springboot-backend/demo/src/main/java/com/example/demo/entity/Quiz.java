@@ -20,7 +20,7 @@ public class Quiz {
     @OneToMany(cascade = CascadeType.ALL)
     private List<Question> questions;
 
-    @OneToMany(mappedBy = "quiz")
+    @OneToMany(mappedBy = "quiz", cascade = CascadeType.ALL)
     @JsonManagedReference(value = "quiz-quizSummary")
     private List<QuizSummary> quizSummaries;
 

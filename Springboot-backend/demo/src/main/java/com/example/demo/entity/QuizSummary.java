@@ -16,17 +16,21 @@ public class QuizSummary {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "quiz_id")
     @JsonBackReference(value = "quiz-quizSummary")
     private Quiz quiz;
 
-    @ManyToOne
+    @ManyToOne()
     @JsonBackReference(value = "user-quizSummary")
     @JoinColumn(name = "user_id")
     private User user;
 
     @ElementCollection
+    @CollectionTable(
+        name = "quiz_question_summaries",
+        joinColumns = @JoinColumn(name = "quiz_summary_id")
+    )
     private List<QuestionSummary> questionSummaries;
 
     private int score;
