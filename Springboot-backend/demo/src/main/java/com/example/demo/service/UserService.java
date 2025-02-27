@@ -110,7 +110,10 @@ public class UserService {
 
     public List<Course> getEnrolledCourses(Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
-        return user.getEnrolledCourses();
+        return user.getProgressList().stream()
+                .filter(progress -> progress.getStatus() == Progress.Status.ENROLLED)
+                .map(Progress::getCourse)
+                .toList();
     }
 
     public List<Course> getCompletedCourses(Long userId) {
@@ -351,6 +354,32 @@ public class UserService {
                 ));
         
         progress.markAsInProgress(); // Use the method from Progress entity
+        return progressRepository.save(progress);
+    }
+
+    @Transactional
+    public Progress markLessonAsCompleted(Long userId, Long courseId, Long lessonId) {
+        // Get the progress record
+        Progress progress = progressRepository.findByUserIdAndCourseId(userId, courseId)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Progress not found for user " + userId + " and course " + courseId
+            ));
+
+        // Get the lesson
+        Lesson lesson = lessonRepository.findById(lessonId)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Lesson not found with id: " + lessonId
+            ));
+
+        // Add the lesson to completed lessons
+        progress.addCompletedLesson(lesson);
+        
+        // Ensure course is marked as in progress
+        progress.markAsInProgress();
+
+        // Save and return the updated progress
         return progressRepository.save(progress);
     }
     

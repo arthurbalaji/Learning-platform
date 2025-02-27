@@ -202,4 +202,23 @@ public class UserController {
             );
         }
     }
+
+    @PostMapping("/{userId}/courses/{courseId}/lessons/{lessonId}/complete")
+    public ResponseEntity<Progress> markLessonAsCompleted(
+        @PathVariable Long userId,
+        @PathVariable Long courseId,
+        @PathVariable Long lessonId
+    ) {
+        try {
+            Progress progress = userService.markLessonAsCompleted(userId, courseId, lessonId);
+            return ResponseEntity.ok(progress);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Error marking lesson as completed: " + e.getMessage()
+            );
+        }
+    }
 }

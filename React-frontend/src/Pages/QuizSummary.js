@@ -140,7 +140,15 @@ const QuizSummary = () => {
             } else {
                 // For lesson quizzes
                 if (score >= 80) {
-                   
+                    // Mark current lesson as completed
+                    try {
+                        await axios.post(
+                            `http://localhost:8080/users/${user.id}/courses/${courseId}/lessons/${lessonId}/complete`
+                        );
+                    } catch (error) {
+                        console.error('Error marking lesson as completed:', error);
+                    }
+                    
                     const nextLessonId = getNextLessonId();
                     if (nextLessonId) {
                         // Navigate to the next lesson using the learn page
