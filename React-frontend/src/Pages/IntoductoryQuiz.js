@@ -46,66 +46,72 @@ const IntroductoryQuiz = () => {
             return;
         }
 
-        // Check if all questions are answered
-        const unansweredQuestions = quiz.questions.filter(question => answers[question.id] === '');
+        // Check for unanswered questions
+        const unansweredQuestions = quiz.questions.filter(
+            question => answers[question.id] === undefined
+        );
         if (unansweredQuestions.length > 0) {
             alert('Please answer all questions before submitting.');
             return;
         }
 
         try {
-            // Validate and format question summaries
-            const questionSummaries = quiz.questions.map(question => {
-                const selectedOptionIndex = parseInt(answers[question.id], 10);
-                const selectedOption = question.options[selectedOptionIndex];
-                
-                // Debug logging
-                console.log('Selected option:', selectedOption);
-                console.log('Correct flag:', selectedOption.correct); // Note: using 'correct' instead of 'isCorrect'
+            // Submit quiz and get summary
+            const questionSummaries = quiz.questions.map(question => ({
+                question: {
+                    id: question.id,
+                    name: question.name
+                },
+                selectedOptionIndex: parseInt(answers[question.id], 10),
+                correct: question.options[answers[question.id]].correct
+            }));
 
-                if (!selectedOption) {
-                    throw new Error(`Invalid option selected for question: ${question.name}`);
-                }
-
-                return {
-                    question: {
-                        id: question.id,
-                        name: question.name
-                    },
-                    selectedOption: {
-                        id: selectedOption.id,
-                        text: selectedOption.text
-                    },
-                    selectedOptionIndex: selectedOptionIndex,
-                    correct: selectedOption.correct // Changed from isCorrect to correct
-                };
-            });
-
-            const payload = {
-                userId: user.id,
-                questionSummaries: questionSummaries
-            };
-
-            console.log('Final quiz submission payload:', JSON.stringify(payload, null, 2));
-
-            const response = await axios.post(
-                `http://localhost:8080/users/${user.id}/courses/${courseId}/intro-quiz`, 
-                payload,
+            // First API call to submit quiz
+            const quizResponse = await axios.post(
+                `http://localhost:8080/users/${user.id}/courses/${courseId}/intro-quiz`,
                 {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                    userId: user.id,
+                    questionSummaries
                 }
             );
 
-            if (response.status === 201 || response.status === 200) {
-                console.log('Quiz submission successful:', response.data);
-                const summaryId = response.data.id;
+            // Fix: Change 'response' to 'quizResponse'
+            if (quizResponse.status === 201 || quizResponse.status === 200) {
+                const summaryId = quizResponse.data.id;
+
+                // Second API call to analyze quiz
+                try {
+                    const analysisResponse = await axios.post(
+                        `http://localhost:5000/users/${user.id}/courses/${courseId}/analyze-intro-quiz/${summaryId}`,
+                        {},
+                        {
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        }
+                    );
+
+                    if (analysisResponse.data.status === 'success') {
+                        console.log('Quiz analysis complete:', analysisResponse.data);
+                        
+                        // Show completion message with recommendations
+                        alert(
+                            `Quiz completed successfully!\n\n${analysisResponse.data.recommendation}\n\n` +
+                            `Your score: ${analysisResponse.data.overall_score}%\n` +
+                            `Lessons automatically completed: ${analysisResponse.data.lessons_completed.length}`
+                        );
+                    }
+                } catch (analysisError) {
+                    console.error('Error analyzing quiz:', analysisError);
+                    // Continue to summary page even if analysis fails
+                }
+
+                // Navigate to summary page
                 navigate(`/quiz-summary?type=introductory&courseId=${courseId}&summaryId=${summaryId}`);
             }
         } catch (error) {
             console.error('Error submitting quiz:', error);
-            alert(`Failed to submit quiz: ${error.message}`);
+            alert(`Failed to submit quiz: ${error.response?.data?.message || error.message}`);
         }
     };
 

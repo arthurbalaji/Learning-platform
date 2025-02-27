@@ -4,6 +4,9 @@ import requests
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+from collections import defaultdict
 
 app = Flask(__name__)
 
@@ -54,8 +57,8 @@ def get_recommended_courses(user_id):
         # Combine user interests with course names
         user_interests = user.get("interests", [])
         user_course_titles = user_interests + \
-                           [course["name"] for course in in_progress_courses] + \
-                           [course["name"] for course in completed_courses]
+                        [course["name"] for course in in_progress_courses] + \
+                        [course["name"] for course in completed_courses]
 
         if not user_course_titles:
             return jsonify([])  # Return empty list if no interests or courses
@@ -93,6 +96,113 @@ def get_recommended_courses(user_id):
     except Exception as e:
         print(f"Error processing request: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/users/<int:user_id>/courses/<int:course_id>/analyze-intro-quiz/<int:quiz_summary_id>', methods=['POST', 'OPTIONS'])
+def analyze_intro_quiz_knowledge(user_id, course_id, quiz_summary_id):
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response
+
+    try:
+        # Get quiz summary from Spring backend
+        quiz_summary_response = requests.get(
+            f"{BASE_URL}/users/{user_id}/courses/{course_id}/intro-quiz-summary/{quiz_summary_id}"
+        )
+        
+        if quiz_summary_response.status_code != 200:
+            return jsonify({"error": "Failed to fetch quiz summary"}), 500
+        
+        quiz_summary = quiz_summary_response.json()
+        
+        # Get course lessons
+        lessons_response = requests.get(f"{BASE_URL}/courses/{course_id}/lessons")
+        if lessons_response.status_code != 200:
+            return jsonify({"error": "Failed to fetch lessons"}), 500
+            
+        lessons = lessons_response.json()
+
+        # Analyze quiz performance and knowledge areas
+        knowledge_areas = defaultdict(float)
+        total_questions = len(quiz_summary['questionSummaries'])
+        correct_answers = 0
+
+        for question_summary in quiz_summary['questionSummaries']:
+            question = question_summary['question']
+            is_correct = question_summary['correct']
+            
+            # Extract topic from question name (assuming format: "Topic: Question")
+            topic = question['name'].split(':')[0].strip() if ':' in question['name'] else question['name']
+            
+            # Weight the knowledge score based on correctness
+            knowledge_score = 1.0 if is_correct else 0.0
+            knowledge_areas[topic] += knowledge_score
+            
+            if is_correct:
+                correct_answers += 1
+
+        # Calculate overall performance
+        overall_score = (correct_answers / total_questions) * 100
+
+        # Normalize knowledge scores
+        for topic in knowledge_areas:
+            questions_in_topic = sum(1 for qs in quiz_summary['questionSummaries'] if topic in qs['question']['name'])
+            knowledge_areas[topic] /= questions_in_topic
+
+        # Sort lessons by difficulty (assuming lessons have a difficulty property)
+        easy_lessons = sorted(
+            lessons,
+            key=lambda x: x.get('sequence', float('inf'))  # Use sequence as difficulty indicator
+        )[:2]  # Get first two lessons (assumed to be easiest)
+
+        lessons_to_complete = []
+        if overall_score >= 70:  # If overall performance is good
+            for lesson in easy_lessons:
+                # Check if lesson topic matches areas of high knowledge
+                lesson_topic = lesson.get('name', '').split(':')[0].strip()
+                if lesson_topic in knowledge_areas and knowledge_areas[lesson_topic] >= 0.7:
+                    lessons_to_complete.append(lesson)
+                    
+                    # Mark lesson as completed via Spring backend
+                    complete_response = requests.post(
+                        f"{BASE_URL}/users/{user_id}/courses/{course_id}/lessons/{lesson['id']}/complete"
+                    )
+                    if complete_response.status_code != 200:
+                        print(f"Failed to mark lesson {lesson['id']} as completed")
+
+        # Mark course as in progress
+        progress_response = requests.post(
+            f"{BASE_URL}/users/{user_id}/courses/{course_id}/in-progress"
+        )
+
+        return jsonify({
+            "status": "success",
+            "quiz_summary_id": quiz_summary_id,
+            "overall_score": overall_score,
+            "knowledge_areas": dict(knowledge_areas),
+            "lessons_completed": [
+                {
+                    "id": lesson['id'],
+                    "name": lesson['name'],
+                    "topic": lesson['name'].split(':')[0].strip()
+                }
+                for lesson in lessons_to_complete
+            ],
+            "recommendation": (
+                "Based on your quiz performance, you can skip the introductory lessons marked as completed."
+                if lessons_to_complete
+                else "We recommend following all lessons in order."
+            )
+        })
+
+    except Exception as e:
+        print(f"Error analyzing intro quiz: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

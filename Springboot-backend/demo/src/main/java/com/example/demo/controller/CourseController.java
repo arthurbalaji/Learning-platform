@@ -7,7 +7,9 @@ import com.example.demo.entity.User;
 import com.example.demo.exception.UnauthorizedException;
 import com.example.demo.service.CourseService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -100,7 +102,14 @@ public class CourseController {
     }
 
     @DeleteMapping("/{courseId}")
-    public void deleteCourse(@PathVariable Long courseId) {
-        courseService.deleteCourse(courseId);
+    public ResponseEntity<?> deleteCourse(@PathVariable Long courseId) {
+        try {
+            courseService.deleteCourse(courseId);
+            return ResponseEntity.ok().build();
+        } catch (ResponseStatusException e) {
+            return ResponseEntity
+                .status(e.getStatusCode())
+                .body("");
+        }
     }
 }

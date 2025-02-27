@@ -4,10 +4,12 @@ import com.example.demo.entity.Course;
 import com.example.demo.entity.Lesson;
 import com.example.demo.entity.Progress;
 import com.example.demo.entity.Quiz;
+import com.example.demo.entity.User;
 import com.example.demo.repository.CourseRepository;
 import com.example.demo.repository.LessonRepository;
 import com.example.demo.repository.ProgressRepository;
 import com.example.demo.repository.QuizRepository;
+import com.example.demo.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
@@ -19,7 +21,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import jakarta.transaction.Transactional;
+
 @Service
+@Transactional
 public class CourseService {
 
     @Autowired
@@ -34,7 +39,9 @@ public class CourseService {
     @Autowired
     private ProgressRepository progressRepository;
 
-    @jakarta.transaction.Transactional
+    @Autowired
+    private UserRepository userRepository;
+
     public Course addCourse(Course course) {
         if (course.getIntroductoryQuiz() != null) {
             quizRepository.save(course.getIntroductoryQuiz());
@@ -171,7 +178,6 @@ public class CourseService {
         return new ArrayList<>(completedLessons);
     }
 
-    @jakarta.transaction.Transactional
     public Course updateCourse(Long courseId, Course updatedCourse) {
         Course existingCourse = courseRepository.findById(courseId)
                 .orElseThrow();
@@ -243,29 +249,31 @@ public class CourseService {
         }
     }
 
-    @jakarta.transaction.Transactional
     public void deleteCourse(Long courseId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found"));
-        
-        // Delete associated quizzes
-        if (course.getIntroductoryQuiz() != null) {
-            quizRepository.delete(course.getIntroductoryQuiz());
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, 
+                        "Course not found"
+                ));
+
+        try {
+            // Remove the course from all enrolled users
+            for (User user : course.getEnrolledUsers()) {
+                user.getEnrolledCourses().remove(course);
+                userRepository.save(user);
+            }
+
+            // Clear all progress records
+            course.getProgressList().clear();
+
+            // Delete the course
+            courseRepository.delete(course);
+            courseRepository.flush();
+        } catch (Exception e) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to delete course: " + e.getMessage()
+            );
         }
-        if (course.getFinalQuiz() != null) {
-            quizRepository.delete(course.getFinalQuiz());
-        }
-        
-        // Delete associated lessons and their quizzes
-        if (course.getLessons() != null) {
-            course.getLessons().forEach(lesson -> {
-                if (lesson.getQuiz() != null) {
-                    quizRepository.delete(lesson.getQuiz());
-                }
-                lessonRepository.delete(lesson);
-            });
-        }
-        
-        courseRepository.delete(course);
     }
 }
