@@ -7,6 +7,17 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 from collections import defaultdict
+from deepface import DeepFace
+import base64
+import cv2
+import numpy as np
+import traceback  # Add this at the top with other imports
+import os
+from datetime import datetime
+
+# Add this after existing imports
+from io import BytesIO
+from PIL import Image
 
 app = Flask(__name__)
 
@@ -232,6 +243,87 @@ def analyze_intro_quiz_knowledge(user_id, course_id, quiz_summary_id):
             "status": "error", 
             "error": str(e)
         }), 500
+
+@app.route('/analyze-emotion', methods=['POST'])
+def analyze_emotion():
+    try:
+        # Get base64 image and timestamp from request
+        data = request.json
+        image_data = data.get('image')
+        client_timestamp = data.get('timestamp')
+        
+        if not image_data:
+            print("No image data received")
+            return jsonify({"error": "No image provided"}), 400
+
+        try:
+            if 'data:image' in image_data:
+                image_data = image_data.split('base64,')[1]
+
+            img_bytes = base64.b64decode(image_data)
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            
+            if len(nparr) == 0:
+                print("Empty numpy array after conversion")
+                return jsonify({"error": "Empty image data"}), 400
+                
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is None:
+                print("Failed to decode image with OpenCV")
+                return jsonify({"error": "Failed to decode image"}), 400
+
+            # Add random noise to prevent caching
+            noise = np.random.normal(0, 2, frame.shape).astype(np.uint8)
+            frame = cv2.add(frame, noise)
+
+            print(f"Processing frame at {client_timestamp}")
+            print(f"Frame shape: {frame.shape}")
+            print(f"Frame mean value: {frame.mean()}")  # Should vary between frames
+
+            result = DeepFace.analyze(
+                frame,
+                actions=['emotion'],
+                enforce_detection=False,
+                detector_backend='opencv'
+            )
+            
+            # Filter out neutral and fear emotions
+            emotion_data = {
+                k: round(float(v), 4) 
+                for k, v in result[0]['emotion'].items() 
+                if k not in ['neutral', 'fear']
+            }
+            
+            print(f"Emotion variations (excluding neutral and fear): {emotion_data}")
+            
+            # Get dominant emotion (excluding neutral and fear)
+            dominant_emotion = max(emotion_data.items(), key=lambda x: x[1])[0]
+            needs_break = dominant_emotion in ['angry', 'sad', 'disgust']
+            
+            return jsonify({
+                "status": "success",
+                "emotion": dominant_emotion,
+                "emotion_scores": emotion_data,
+                "needs_break": needs_break,
+                "timestamp": datetime.now().isoformat(),
+                "frame_stats": {
+                    "mean": float(frame.mean()),
+                    "std": float(frame.std())
+                }
+            })
+
+        except ValueError as ve:
+            print(f"Base64 decoding error: {str(ve)}")
+            return jsonify({"error": f"Invalid image data: {str(ve)}"}), 400
+            
+        except cv2.error as ce:
+            print(f"OpenCV error: {str(ce)}")
+            return jsonify({"error": f"Image processing error: {str(ce)}"}), 400
+
+    except Exception as e:
+        print(f"Error analyzing emotion: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

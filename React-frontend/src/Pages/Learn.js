@@ -6,6 +6,8 @@ import { Button, Typography, Box, Container, List, ListItem, ListItemText, ListI
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import YouTube from 'react-youtube';
+import PopupGame from './popupgame';
+import Webcam from 'react-webcam';
 
 // YouTube video options
 const youtubeOpts = {
@@ -48,6 +50,9 @@ const Learn = () => {
     const { user } = useContext(UserContext);
     const navigate = useNavigate();
     const [videoError, setVideoError] = useState(false);
+    const [showGame, setShowGame] = useState(false);
+    const [emotionTimer, setEmotionTimer] = useState(null);
+    const webcamRef = React.useRef(null);
 
     useEffect(() => {
         const fetchCourse = async () => {
@@ -102,6 +107,72 @@ const Learn = () => {
             fetchCourse();
         }
     }, [courseId, lessonId, user, navigate]);
+
+    // Update the checkEmotion function
+    const checkEmotion = async () => {
+        if (webcamRef.current) {
+            try {
+                // Force webcam refresh
+                const video = webcamRef.current.video;
+                if (video) {
+                    video.srcObject = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: 640,
+                            height: 480,
+                            frameRate: { ideal: 30 }
+                        }
+                    });
+                }
+
+                // Wait for new frame
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                const imageSrc = webcamRef.current.getScreenshot();
+                if (!imageSrc) {
+                    console.error('Failed to capture webcam image');
+                    return;
+                }
+
+                const timestamp = new Date().toISOString();
+                console.log('Capturing frame at:', timestamp);
+
+                const response = await axios.post('http://localhost:5000/analyze-emotion', {
+                    image: imageSrc,
+                    timestamp: timestamp
+                }, {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('Frame stats:', response.data.frame_stats);
+                console.log('Emotion scores:', response.data.emotion_scores);
+                
+                if (response.data.needs_break) {
+                    setShowGame(true);
+                    if (emotionTimer) {
+                        clearInterval(emotionTimer);
+                        setEmotionTimer(null);
+                    }
+                }
+            } catch (error) {
+                console.error('Error analyzing emotion:', error.response?.data);
+            }
+        }
+    };
+
+    // Update the useEffect for emotion timer
+    useEffect(() => {
+        if (!showGame && !emotionTimer) {
+            const timer = setInterval(checkEmotion, 5 * 1000); // 5 minutes
+            setEmotionTimer(timer);
+        }
+        return () => {
+            if (emotionTimer) {
+                clearInterval(emotionTimer);
+            }
+        };
+    }, [showGame, emotionTimer]);
 
     const handleQuiz = async () => {
         try {
@@ -284,6 +355,34 @@ const Learn = () => {
                     </List>
                 </Box>
             </Box>
+            <Webcam
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                style={{ display: 'none' }}
+                videoConstraints={{
+                    width: 640,
+                    height: 480,
+                    facingMode: "user",
+                    frameRate: { ideal: 30 }
+                }}
+                audio={false}
+                mirrored={false}
+                screenshotQuality={1.0}
+                forceScreenshotSourceSize={true}
+                onUserMedia={() => console.log('Webcam initialized')}
+                onUserMediaError={(err) => console.error('Webcam error:', err)}
+            />
+            <PopupGame 
+                open={showGame}
+                onClose={() => {
+                    setShowGame(false);
+                    // Resume emotion detection timer
+                    if (!emotionTimer) {
+                        const timer = setInterval(checkEmotion, 5 * 60 * 1000);
+                        setEmotionTimer(timer);
+                    }
+                }}
+            />
         </Container>
     );
 };
