@@ -164,7 +164,7 @@ const Learn = () => {
     // Update the useEffect for emotion timer
     useEffect(() => {
         if (!showGame && !emotionTimer) {
-            const timer = setInterval(checkEmotion, 5 * 1000); // 5 minutes
+            const timer = setInterval(checkEmotion, 5 * 60 * 1000); // 5 minutes
             setEmotionTimer(timer);
         }
         return () => {
